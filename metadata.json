@@ -1,0 +1,7 @@
+{
+  "name": "Velocity Strike: Hand Speed Challenge",
+  "description": "A high-intensity hand speed game using Gemini vision to detect rapid up-and-down fist motions. Reach 100 strokes within the time limit to win!",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
