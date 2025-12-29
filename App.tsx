@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { GameStatus, GameState, Language } from './types';
 
 // Constants
-const STROKE_THRESHOLD = 0.06; 
+const STROKE_THRESHOLD = 0.04; 
 const MAX_LEVEL = 12; 
 const MOSAIC_SIZE = 12; 
 
