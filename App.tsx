@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { GameStatus, GameState, Language } from './types';
 
 // Constants
-const STROKE_THRESHOLD = 0.04; 
+const STROKE_THRESHOLD = 0.06; 
 const MAX_LEVEL = 12; 
 const MOSAIC_SIZE = 12; 
 
@@ -86,7 +86,8 @@ const translations = {
     peelIntegrity: "Peel Integrity",
     initialize: "INITIALIZE PROTOCOL",
     instruction: "Grip tight and move UP & DOWN fast.",
-    auth: "Auth Engagement",
+    auth: "CLICK TO START",
+    privacy: "Processing occurs locally. No video data is uploaded.",
     ready: "READY",
     levelClear: "LEVEL CLEAR",
     exceeded: "Exceeded minimum requirements.",
@@ -123,7 +124,8 @@ const translations = {
     peelIntegrity: "果皮完整度",
     initialize: "初始化协议",
     instruction: "握紧拳头，快速上下挥动。",
-    auth: "授权开始",
+    auth: "点击开始",
+    privacy: "系统使用训练好的模块在本地运行，不会上传你的视频",
     ready: "准备",
     levelClear: "关卡完成",
     exceeded: "你很棒！",
@@ -576,7 +578,8 @@ const App: React.FC = () => {
               </div>
               <div className="flex flex-col gap-3 w-full max-w-xs">
                 <button onClick={startGame} className="w-full py-4 bg-white text-slate-950 font-black rounded-2xl hover:bg-yellow-400 transition-all uppercase tracking-widest text-sm shadow-xl active:scale-95">{t.auth}</button>
-                <button onClick={() => setIsLevelSelectorOpen(true)} className="w-full py-3 bg-slate-800 text-white font-black rounded-2xl hover:bg-slate-700 transition-all uppercase tracking-widest text-[10px] border border-white/5 active:scale-95">{t.selectLevel}</button>
+                <p className="text-[10px] text-white/40 font-bold px-4 uppercase tracking-tighter leading-tight">{t.privacy}</p>
+                <button onClick={() => setIsLevelSelectorOpen(true)} className="mt-2 w-full py-3 bg-slate-800 text-white font-black rounded-2xl hover:bg-slate-700 transition-all uppercase tracking-widest text-[10px] border border-white/5 active:scale-95">{t.selectLevel}</button>
               </div>
             </div>
           )}
