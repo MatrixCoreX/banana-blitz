@@ -11,6 +11,71 @@ declare const Hands: any;
 declare const FaceDetection: any;
 declare const Camera: any;
 
+// Audio System Class
+class GameAudio {
+  private ctx: AudioContext | null = null;
+
+  init() {
+    if (!this.ctx) {
+      this.ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    }
+    if (this.ctx.state === 'suspended') {
+      this.ctx.resume();
+    }
+  }
+
+  private playTone(freq: number, type: OscillatorType, duration: number, volume: number, fadeOut = true) {
+    if (!this.ctx) return;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+    
+    gain.gain.setValueAtTime(volume, this.ctx.currentTime);
+    if (fadeOut) {
+      gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + duration);
+    }
+
+    osc.connect(gain);
+    gain.connect(this.ctx.destination);
+
+    osc.start();
+    osc.stop(this.ctx.currentTime + duration);
+  }
+
+  playStroke() {
+    // A quick "woosh" like sound using a fast sine sweep
+    if (!this.ctx) return;
+    this.playTone(150 + Math.random() * 50, 'sine', 0.1, 0.3);
+    this.playTone(300, 'triangle', 0.05, 0.1);
+  }
+
+  playLevelClear() {
+    // Ascending bright notes
+    const now = this.ctx?.currentTime || 0;
+    [440, 554, 659, 880].forEach((freq, i) => {
+      setTimeout(() => this.playTone(freq, 'sine', 0.4, 0.15), i * 100);
+    });
+  }
+
+  playFailure() {
+    // Descending heavy notes
+    [200, 150, 100].forEach((freq, i) => {
+      setTimeout(() => this.playTone(freq, 'sawtooth', 0.6, 0.1), i * 200);
+    });
+  }
+
+  playVictory() {
+    // Grand finale
+    [523, 659, 783, 1046].forEach((freq, i) => {
+      setTimeout(() => this.playTone(freq, 'square', 0.5, 0.05), i * 150);
+    });
+  }
+}
+
+const audioManager = new GameAudio();
+
 const translations = {
   en: {
     title: "BANANA BLITZ",
@@ -220,6 +285,7 @@ const App: React.FC = () => {
               if (motionStateRef.current === 'IDLE') motionStateRef.current = dir;
               else if (motionStateRef.current !== dir) {
                 if (travelDistRef.current > STROKE_THRESHOLD) {
+                  audioManager.playStroke(); // Play sound on stroke
                   setGameState(prev => {
                     const nextScore = Math.min(prev.score + 1, currentGoal);
                     return { ...prev, score: nextScore };
@@ -310,10 +376,14 @@ const App: React.FC = () => {
       const duration = initialTimeForLevelRef.current - gameState.timeLeft;
       setLevelClearTime(duration);
       if (gameState.level >= MAX_LEVEL) {
+        audioManager.playVictory();
         setGameState(prev => ({ ...prev, status: GameStatus.FINISHED }));
       } else {
+        audioManager.playLevelClear();
         setGameState(prev => ({ ...prev, status: GameStatus.LEVEL_COMPLETE }));
       }
+    } else if (gameState.status === GameStatus.FINISHED && gameState.score < currentGoal) {
+      audioManager.playFailure();
     }
   }, [gameState.score, currentGoal, gameState.level, gameState.status, gameState.timeLeft]);
 
@@ -322,6 +392,7 @@ const App: React.FC = () => {
   };
 
   const startGame = () => {
+    audioManager.init(); // Unlock audio context on interaction
     initialTimeForLevelRef.current = 60;
     setGameState(prev => ({ ...prev, score: 0, timeLeft: 60, status: GameStatus.STARTING, level: 1 }));
     setLevelClearTime(null);
@@ -330,6 +401,7 @@ const App: React.FC = () => {
   };
 
   const selectLevelManually = (level: number) => {
+    audioManager.init(); // Unlock audio context on interaction
     let timeLimit = level * 60;
     if (level === 11) timeLimit = 600;
     if (level === 12) timeLimit = 1200;
