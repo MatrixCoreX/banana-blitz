@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { GameStatus, GameState, Language } from './types';
 
 // Constants
-const STROKE_THRESHOLD = 0.06; // Adjusted for better sensitivity
+const STROKE_THRESHOLD = 0.06; 
 const MAX_LEVEL = 12; 
 const MOSAIC_SIZE = 12; 
 
@@ -45,29 +45,27 @@ class GameAudio {
   }
 
   playStroke() {
-    // A quick "woosh" like sound using a fast sine sweep
     if (!this.ctx) return;
     this.playTone(150 + Math.random() * 50, 'sine', 0.1, 0.3);
     this.playTone(300, 'triangle', 0.05, 0.1);
   }
 
   playLevelClear() {
-    // Ascending bright notes
-    const now = this.ctx?.currentTime || 0;
+    if (!this.ctx) return;
     [440, 554, 659, 880].forEach((freq, i) => {
       setTimeout(() => this.playTone(freq, 'sine', 0.4, 0.15), i * 100);
     });
   }
 
   playFailure() {
-    // Descending heavy notes
+    if (!this.ctx) return;
     [200, 150, 100].forEach((freq, i) => {
       setTimeout(() => this.playTone(freq, 'sawtooth', 0.6, 0.1), i * 200);
     });
   }
 
   playVictory() {
-    // Grand finale
+    if (!this.ctx) return;
     [523, 659, 783, 1046].forEach((freq, i) => {
       setTimeout(() => this.playTone(freq, 'square', 0.5, 0.05), i * 150);
     });
@@ -246,12 +244,19 @@ const App: React.FC = () => {
   const timerRef = useRef<number | null>(null);
   const countdownRef = useRef<number | null>(null);
   
+  // Refs for logic to avoid race conditions with MediaPipe/WASM
+  const gameStateRef = useRef<GameState>(gameState);
+  const isDestroyedRef = useRef(false);
   const lastYRef = useRef<number | null>(null);
   const motionStateRef = useRef<'UP' | 'DOWN' | 'IDLE'>('IDLE');
   const travelDistRef = useRef<number>(0);
   const faceResultsRef = useRef<any[]>([]);
   const mosaicActiveRef = useRef(true);
   const initialTimeForLevelRef = useRef<number>(60);
+
+  useEffect(() => {
+    gameStateRef.current = gameState;
+  }, [gameState]);
 
   useEffect(() => {
     mosaicActiveRef.current = mosaicActive;
@@ -263,11 +268,15 @@ const App: React.FC = () => {
   useEffect(() => {
     if (!videoRef.current || !canvasRef.current) return;
 
+    isDestroyedRef.current = false;
+
     const hands = new Hands({
       locateFile: (file: string) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
     });
     hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+    
     hands.onResults((results: any) => {
+      if (isDestroyedRef.current) return;
       if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
         setIsHandDetected(true);
         const landmarks = results.multiHandLandmarks[0];
@@ -276,7 +285,7 @@ const App: React.FC = () => {
         for (let i = 0; i < tips.length; i++) if (landmarks[tips[i]].y > landmarks[mcps[i]].y) curled++;
         const fist = curled >= 3;
         setIsFist(fist);
-        if (fist && gameState.status === GameStatus.PLAYING) {
+        if (fist && gameStateRef.current.status === GameStatus.PLAYING) {
           const currentY = landmarks[0].y;
           if (lastYRef.current !== null) {
             const deltaY = currentY - lastYRef.current;
@@ -285,9 +294,10 @@ const App: React.FC = () => {
               if (motionStateRef.current === 'IDLE') motionStateRef.current = dir;
               else if (motionStateRef.current !== dir) {
                 if (travelDistRef.current > STROKE_THRESHOLD) {
-                  audioManager.playStroke(); // Play sound on stroke
+                  audioManager.playStroke();
                   setGameState(prev => {
-                    const nextScore = Math.min(prev.score + 1, currentGoal);
+                    const goal = prev.level === 11 ? 500 : prev.level === 12 ? 1000 : Math.min(prev.level * 10, 100);
+                    const nextScore = Math.min(prev.score + 1, goal);
                     return { ...prev, score: nextScore };
                   });
                 }
@@ -307,12 +317,15 @@ const App: React.FC = () => {
     });
     faceDetection.setOptions({ model: 'short', minDetectionConfidence: 0.5 });
     faceDetection.onResults((results: any) => {
+      if (isDestroyedRef.current) return;
       faceResultsRef.current = results.detections || [];
     });
 
     const ctx = canvasRef.current.getContext('2d');
+    let animationFrameId: number;
+
     const drawMosaic = () => {
-      if (!ctx || !videoRef.current || !canvasRef.current) return;
+      if (isDestroyedRef.current || !ctx || !videoRef.current || !canvasRef.current) return;
       
       const width = canvasRef.current.width;
       const height = canvasRef.current.height;
@@ -346,29 +359,39 @@ const App: React.FC = () => {
           }
         });
       }
-      requestAnimationFrame(drawMosaic);
+      animationFrameId = requestAnimationFrame(drawMosaic);
     };
 
     const camera = new Camera(videoRef.current, {
       onFrame: async () => {
-        if (videoRef.current) {
-          await hands.send({ image: videoRef.current });
-          await faceDetection.send({ image: videoRef.current });
+        if (!isDestroyedRef.current && videoRef.current) {
+          try {
+            await hands.send({ image: videoRef.current });
+            await faceDetection.send({ image: videoRef.current });
+          } catch (e) {
+            console.error("MediaPipe send error:", e);
+          }
         }
       },
       width: 640, height: 480
     });
     
     camera.start().then(() => {
-      drawMosaic();
+      if (!isDestroyedRef.current) drawMosaic();
     });
 
     return () => { 
+      isDestroyedRef.current = true;
       camera.stop(); 
-      hands.close(); 
-      faceDetection.close();
+      cancelAnimationFrame(animationFrameId);
+      // Wait a tick before closing to allow any in-flight WASM calls to finish
+      setTimeout(() => {
+        hands.close(); 
+        faceDetection.close();
+      }, 100);
     };
-  }, [gameState.status, currentGoal]);
+    // Re-setup only on mount to prevent frequent "deleted object" errors
+  }, []);
 
   useEffect(() => {
     if (gameState.status === GameStatus.PLAYING && gameState.score >= currentGoal) {
@@ -392,7 +415,7 @@ const App: React.FC = () => {
   };
 
   const startGame = () => {
-    audioManager.init(); // Unlock audio context on interaction
+    audioManager.init();
     initialTimeForLevelRef.current = 60;
     setGameState(prev => ({ ...prev, score: 0, timeLeft: 60, status: GameStatus.STARTING, level: 1 }));
     setLevelClearTime(null);
@@ -401,7 +424,7 @@ const App: React.FC = () => {
   };
 
   const selectLevelManually = (level: number) => {
-    audioManager.init(); // Unlock audio context on interaction
+    audioManager.init();
     let timeLimit = level * 60;
     if (level === 11) timeLimit = 600;
     if (level === 12) timeLimit = 1200;
